@@ -1,4 +1,4 @@
 # Neural Network Visualizer
-An educational site that allows users to visually see how neural networks process information at different stages.
+Just a personal project to see how neural networks process information. This will allow me to see things such as individual neruon activations, heatmaps, activating images, etc...
 
 I will be moving all the code into this repository very soon!
