@@ -1,6 +1,8 @@
 # neuron-by-neuron dnn visualizer for mnist - trying to figure out what each neuron is doing
 # includes training, hooks for activations, and various visualizations
 
+import os
+os.environ["OMP_NUM_THREADS"] = "1" # limit threads for sklearn t-sne
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -158,19 +160,38 @@ def plot_tsne(model, layer, num_samples=1000):
     with torch.no_grad():
         for X_batch, y_batch in test_loader:
             _ = model(X_batch)
-            acts_list.append(activations[layer].cpu())
-            labels_list.append(y_batch.cpu())
-            if len(acts_list) * X_batch.size(0) >= num_samples:
+            acts_list.append(activations[layer].cpu().numpy().astype(np.float32))  # <-- numpy
+            labels_list.append(y_batch.cpu().numpy())
+            if sum(a.shape[0] for a in acts_list) >= num_samples:
                 break
 
-    X = torch.cat(acts_list)[:num_samples]
-    y = torch.cat(labels_list)[:num_samples]
-    X_2d = TSNE(n_components=2, perplexity=30, random_state=42).fit_transform(X)
+    X = np.concatenate(acts_list, axis=0)[:num_samples]
+    y = np.concatenate(labels_list, axis=0)[:num_samples]
+
+    # try tsne; if it crashes/errors, fall back to pca
+    try:
+        tsne = TSNE(
+            n_components=2,
+            perplexity=30,
+            init="pca",
+            learning_rate="auto",
+            n_iter=500,           # a bit smaller = stabler/faster
+            random_state=42,
+            method="barnes_hut",  # default; keeps memory lower
+            verbose=1,
+        )
+        X_2d = tsne.fit_transform(X)
+        title = f"t-sne of {layer} activations"
+    except Exception as e:
+        # fallback: pca (never crashes)
+        from sklearn.decomposition import PCA
+        X_2d = PCA(n_components=2, random_state=42).fit_transform(X)
+        title = f"pca fallback for {layer} activations (t-sne error: {e})"
 
     plt.figure(figsize=(8, 6))
-    sc = plt.scatter(X_2d[:, 0], X_2d[:, 1], c=y, cmap='tab10', alpha=0.7)
+    sc = plt.scatter(X_2d[:, 0], X_2d[:, 1], c=y, cmap="tab10", alpha=0.7)
     plt.legend(*sc.legend_elements(), title="digits")
-    plt.title(f"t-sne of {layer} activations")
+    plt.title(title)
     plt.show()
 
 print("\nrunning t-sne for fc2...")
