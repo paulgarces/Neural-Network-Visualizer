@@ -154,48 +154,53 @@ show_neuron_images(0, top_fc1, "fc1")
 top_fc2 = collect_top_images("fc2", 64)
 show_neuron_images(0, top_fc2, "fc2")
 
-def plot_tsne(model, layer, num_samples=1000):
+def plot_tsne_layers(model, layers=["fc1", "fc2"], num_samples=800):
+    """
+    Safely plots t-SNE (or PCA fallback) for multiple layers.
+    Keeps memory low and includes crash protection.
+    """
     model.eval()
-    acts_list, labels_list = [], []
     with torch.no_grad():
-        for X_batch, y_batch in test_loader:
-            _ = model(X_batch)
-            acts_list.append(activations[layer].cpu().numpy().astype(np.float32))  # <-- numpy
-            labels_list.append(y_batch.cpu().numpy())
-            if sum(a.shape[0] for a in acts_list) >= num_samples:
-                break
+        for layer in layers:
+            acts_list, labels_list = [], []
+            for X_batch, y_batch in test_loader:
+                _ = model(X_batch)
+                acts_list.append(activations[layer].cpu().numpy().astype(np.float32))
+                labels_list.append(y_batch.cpu().numpy())
+                if sum(a.shape[0] for a in acts_list) >= num_samples:
+                    break
 
-    X = np.concatenate(acts_list, axis=0)[:num_samples]
-    y = np.concatenate(labels_list, axis=0)[:num_samples]
+            X = np.concatenate(acts_list, axis=0)[:num_samples]
+            y = np.concatenate(labels_list, axis=0)[:num_samples]
 
-    # try tsne; if it crashes/errors, fall back to pca
-    try:
-        tsne = TSNE(
-            n_components=2,
-            perplexity=30,
-            init="pca",
-            learning_rate="auto",
-            n_iter=500,           # a bit smaller = stabler/faster
-            random_state=42,
-            method="barnes_hut",  # default; keeps memory lower
-            verbose=1,
-        )
-        X_2d = tsne.fit_transform(X)
-        title = f"t-sne of {layer} activations"
-    except Exception as e:
-        # fallback: pca (never crashes)
-        from sklearn.decomposition import PCA
-        X_2d = PCA(n_components=2, random_state=42).fit_transform(X)
-        title = f"pca fallback for {layer} activations (t-sne error: {e})"
+            try:
+                tsne = TSNE(
+                    n_components=2,
+                    perplexity=30,
+                    init="pca",
+                    learning_rate="auto",
+                    n_iter=400,
+                    random_state=42,
+                    method="barnes_hut",
+                    verbose=1,
+                )
+                X_2d = tsne.fit_transform(X)
+                title = f"t-SNE of {layer} activations"
+            except Exception as e:
+                from sklearn.decomposition import PCA
+                X_2d = PCA(n_components=2, random_state=42).fit_transform(X)
+                title = f"PCA fallback for {layer} activations (t-SNE error: {e})"
 
-    plt.figure(figsize=(8, 6))
-    sc = plt.scatter(X_2d[:, 0], X_2d[:, 1], c=y, cmap="tab10", alpha=0.7)
-    plt.legend(*sc.legend_elements(), title="digits")
-    plt.title(title)
-    plt.show()
+            plt.figure(figsize=(8, 6))
+            sc = plt.scatter(X_2d[:, 0], X_2d[:, 1], c=y, cmap="tab10", alpha=0.7)
+            plt.legend(*sc.legend_elements(), title="digits")
+            plt.title(title)
+            plt.tight_layout()
+            plt.show()
 
-print("\nrunning t-sne for fc2...")
-plot_tsne(model, "fc2")
+
+print("\nRunning t-SNE visualizations for fc1 and fc2...")
+plot_tsne_layers(model, ["fc1", "fc2"])
 
 # educational extras, going to try and add more later
 def forward_pass_demo(model, image, label):
@@ -259,8 +264,75 @@ def noisy_prediction(model, image, noise_level=0.3):
     plt.title("prediction on noisy image")
     plt.show()
 
-# demo calls
-img, label = test_data[0]
-forward_pass_demo(model, img, label)
-show_misclassified(model, num_samples=5)
-noisy_prediction(model, img, noise_level=0.5)
+def compare_architectures(activations=["relu", "tanh"], hidden_sizes=[64, 128, 256]):
+    results = []
+    for act_fn in activations:
+        for h in hidden_sizes:
+            print(f"\nTraining model with {act_fn.upper()} and hidden size {h}...")
+            model = nn.Sequential(
+                nn.Linear(784, h),
+                nn.Tanh() if act_fn == "tanh" else nn.ReLU(),
+                nn.Linear(h, 64),
+                nn.Tanh() if act_fn == "tanh" else nn.ReLU(),
+                nn.Linear(64, 10)
+            )
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+            loss_fn = nn.CrossEntropyLoss()
+
+            for epoch in range(3):  # keep short for comparison
+                total, correct = 0, 0
+                for X_batch, y_batch in train_loader:
+                    preds = model(X_batch)
+                    loss = loss_fn(preds, y_batch)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    _, predicted = torch.max(preds, 1)
+                    total += y_batch.size(0)
+                    correct += (predicted == y_batch).sum().item()
+
+            acc = correct / total
+            results.append((act_fn, h, acc))
+            print(f"Accuracy: {acc:.4f}")
+
+    import pandas as pd
+    df = pd.DataFrame(results, columns=["activation", "hidden_size", "accuracy"])
+    df.to_csv("results/architecture_comparison.csv", index=False)
+    print(df)
+    plt.figure(figsize=(8, 4))
+    for act_fn in activations:
+        subset = df[df["activation"] == act_fn]
+        plt.plot(subset["hidden_size"], subset["accuracy"], label=act_fn)
+    plt.legend()
+    plt.title("Accuracy Comparison: ReLU vs Tanh")
+    plt.xlabel("Hidden Layer Size")
+    plt.ylabel("Accuracy")
+    plt.show()
+
+if __name__ == "__main__":
+    # simple configuration toggles
+    run_training = False           # set True if you want to retrain model
+    run_visualizations = True      # visualize neurons, activations, t-sne
+    run_analysis = False           # set True to compare architectures
+
+    if run_training:
+        print("Training model...")
+        # optional: you could move your training loop into a function
+        # but here we’ll just reuse the existing trained model
+
+    if run_visualizations:
+        print("\nRunning visualizations...")
+        show_weight_image(model, "fc1", 0)
+        top_fc1 = collect_top_images("fc1", 256)
+        show_neuron_images(0, top_fc1, "fc1")
+        top_fc2 = collect_top_images("fc2", 64)
+        show_neuron_images(0, top_fc2, "fc2")
+        plot_tsne_layers(model, ["fc1", "fc2"])
+        img, label = test_data[0]
+        forward_pass_demo(model, img, label)
+        show_misclassified(model, num_samples=5)
+        noisy_prediction(model, img, noise_level=0.5)
+
+    if run_analysis:
+        print("\nComparing architectures...")
+        compare_architectures()
