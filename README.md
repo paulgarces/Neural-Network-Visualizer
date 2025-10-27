@@ -29,14 +29,10 @@ Still planning to add a few things like:
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
-
-## Requirements
-- streamlist
-- torch
-- torchvision
-- streamlit
-- numpy
-- numpy
-- matplotlib
-- seaborn
-- scikit-learn
+streamlit
+torch
+torchvision
+numpy
+matplotlib
+seaborn
+scikit-learn
