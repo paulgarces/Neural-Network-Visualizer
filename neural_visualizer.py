@@ -1,3 +1,4 @@
+# Paul Garces
 # neuron-by-neuron dnn visualizer for mnist - trying to figure out what each neuron is doing
 # includes training, hooks for activations, and various visualizations
 # IMPORTANT: running with different architectures will show how network size affects learning and neuron specialization
