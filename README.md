@@ -4,7 +4,7 @@ A neural network interpretability toolkit for understanding how models learn to 
 
 ## Project Context
 
-Developed as part of exploring neural network interpretability techniques. The goal is to make deep learning more transparent and understandable by visualizing what happens at each layer of the network.
+Developed as part of exploring neural network interpretability techniques. The goal is to make deep learning more understandable by trying to visualize what happens at each layer of the network.
 
 ## Project Overview
 
